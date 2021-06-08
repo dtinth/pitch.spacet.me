@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Pitch grapher</title>
+    <style>
+      :root {
+        font-family: sans-serif;
+      }
+      canvas {
+        position: absolute;
+        top: 0; left: 0;
+      }
+    </style>
+  </head>
+  <body style="text-align: center; background: #000; color: #fff;">
+    <div id="pre-start">
+      <h1>Pitch grapher</h1>
+      <button id="resume-button" style="font-size:48px;padding:0.3em 0.4em;">Start</button>
+    </div>
+    <div style="width: 960px; height: 640px; position: relative; display: inline-block">
+      <canvas id="historyCanvas" width="960" height="640"></canvas>
+      <canvas id="canvas" width="960" height="640"></canvas>
+    </div>
+    <script src="https://cdn.jsdelivr.net/npm/pitchy@2.0.3/umd/index.js"></script>
+    <script>
+      /** @type {HTMLCanvasElement} */
+      const canvas = document.getElementById("canvas")
+      /** @type {HTMLCanvasElement} */
+      const historyCanvas = document.getElementById("historyCanvas")
+      const ctx = canvas.getContext("2d")
+      const hctx = historyCanvas.getContext("2d")
+      let note = 0
+
+      function ftom (f) {
+        return 69 + (12.0 * Math.log(f / 440) / Math.log(2));
+      }
+      const historyData = []
+
+      function updatePitch(analyserNode, detector, input, sampleRate) {
+        analyserNode.getFloatTimeDomainData(input);
+        const [pitch, clarity] = detector.findPitch(input, sampleRate);
+        const fnote = ftom(pitch);
+        const width = canvas.width
+        const height = canvas.height
+
+        ctx.clearRect(0, 0, width, height);
+        ctx.fillStyle = '#fff'
+        ctx.font = '60px sans-serif'
+
+        const getY = note => 600 - note * 45
+        ctx.fillStyle = '#fff2'
+        for (let i = 0; i < 12; i++) {
+          ctx.fillRect(0, getY(i) - 1, width, 2)
+        }
+
+        if (Number.isFinite(fnote) && !isNaN(fnote)) {
+          if (Math.abs(fnote - note) < 1) {
+            note += (fnote - note) / 5
+          } else {
+            note = fnote
+          }
+        }
+
+        if (clarity >= 0.9) {
+          const o = (clarity - 0.9) / 0.1
+          const p = note % 12
+          const closestNote = Math.round(note)
+          const octave = Math.floor(note / 12) - 2
+          let pitchClass = closestNote % 12
+          if (pitchClass >= 12) pitchClass -= 12
+          if (pitchClass < 0) pitchClass += 12
+          const name = [
+            'C', 'Db', 'D', 'Eb', 'E',
+            'F', 'F#', 'G', 'Ab', 'A', 'Bb', 'B'
+          ][pitchClass]
+          ctx.save()
+          ctx.fillStyle = '#bef'
+          for (let i = -1; i <= 1; i ++) {
+            const y = getY(p + 12 * i)
+            const yR = getY(Math.round(p) + 12 * i)
+
+            ctx.globalAlpha = o * (1 - Math.abs(p - Math.round(p)) / 0.5)
+            ctx.fillRect(560, Math.min(y, yR) - 1, width - 560, Math.abs(y - yR) + 2)
+
+            ctx.globalAlpha = o
+            ctx.fillRect(560, y - 1, width - 560, 2)
+            ctx.fillText(`${name}${octave}`, 580, y - 8)
+          }
+          ctx.restore()
+          historyData.push(note)
+        } else {
+          historyData.push(null)
+        }
+
+        if (historyData.length > 560 / 3) {
+          historyData.shift()
+        }
+        ctx.save()
+        ctx.strokeStyle = '#bef'
+        ctx.lineWidth = 2
+
+        const strokes = []
+        const active = {}
+
+        for (let i = 0; i < historyData.length; i++) {
+          let x = 560 - (historyData.length - i - 1) * 3
+          const used = new Set()
+          if (historyData[i] != null) {
+            for (let octave = -1; octave <= 1; octave++) {
+              const octaveNumber = Math.floor(historyData[i] / 12) + octave
+              let y = getY(historyData[i] - 12 * octaveNumber)
+              let activeStroke = active[octaveNumber]
+              if (!activeStroke) {
+                activeStroke = active[octaveNumber] = { octaveNumber, line: [] }
+                strokes.push(activeStroke)
+              }
+              activeStroke.line.push({x, y})
+              used.add(octaveNumber)
+            }
+          }
+          for (const key of Object.keys(active)) {
+            if (!used.has(active[key].octaveNumber)) {
+              delete active[key]
+            }
+          }
+        }
+        for (const stroke of strokes) {
+          if (stroke.line.length > 1) {
+            ctx.beginPath()
+            ctx.moveTo(stroke.line[0].x, stroke.line[0].y)
+            for (let i = 1; i < stroke.line.length; i++) {
+              ctx.lineTo(stroke.line[i].x, stroke.line[i].y)
+            }
+            ctx.stroke()
+          }
+        }
+        ctx.restore()
+
+        setTimeout(
+          () => updatePitch(analyserNode, detector, input, sampleRate),
+          16
+        );
+      }
+
+      const resume = document.getElementById("resume-button")
+      resume.addEventListener("click", () => {
+        const audioContext = new window.AudioContext();
+        audioContext.resume()
+        const analyserNode = audioContext.createAnalyser();
+        navigator.mediaDevices.getUserMedia({ audio: { autoGainControl: false } }).then((stream) => {
+          let sourceNode = audioContext.createMediaStreamSource(stream);
+          sourceNode.connect(analyserNode);
+          const detector = pitchy.PitchDetector.forFloat32Array(
+            analyserNode.fftSize
+          );
+          const input = new Float32Array(detector.inputLength);
+          updatePitch(analyserNode, detector, input, audioContext.sampleRate);
+        });
+        document.getElementById("pre-start").hidden =true;
+      });
+
+    </script>
+  </body>
+</html>
