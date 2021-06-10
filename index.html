@@ -87,7 +87,7 @@
             if (dist < -6) dist += 12
             dist = Math.abs(dist)
             if (dist < 0.5) {
-              ctx.globalAlpha = (dist / 0.5) * o
+              ctx.globalAlpha = (1 - (dist / 0.5)) * o
               ctx.fillRect(0, getY(i) - 1, width, 2)
             }
           }
