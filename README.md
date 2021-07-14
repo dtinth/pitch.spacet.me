@@ -1,2 +1,3 @@
-# pitch
-Pitch grapher using pitchy.js
+# pitch.spacet.me
+
+Pitch grapher using pitchy.js. [Now available as Chrome Extension](https://github.com/dtinth/tuner-chrome)
